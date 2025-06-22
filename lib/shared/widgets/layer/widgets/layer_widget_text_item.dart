@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '/core/models/editor_configs/text_editor_configs.dart';
 import '/core/models/layers/text_layer.dart';
@@ -55,13 +56,14 @@ class LayerWidgetTextItem extends StatelessWidget {
         layer.text.toString(),
         backgroundColor: layer.background,
         textAlign: layer.align,
-        style: layer.textStyle?.copyWith(
-              fontSize: style.fontSize,
-              fontWeight: style.fontWeight,
-              color: style.color,
-              fontFamily: style.fontFamily,
-            ) ??
-            style,
+        style:
+            (layer.textStyle?.fontFamily != null ? GoogleFonts.getFont(layer.textStyle!.fontFamily!) : layer.textStyle)
+                    ?.copyWith(
+                  fontSize: style.fontSize,
+                  fontWeight: style.fontWeight,
+                  color: style.color,
+                ) ??
+                style,
       ),
     );
   }
