@@ -56,11 +56,9 @@ class MainEditorStateHistoryService {
   final Function() takeScreenshot;
 
   /// Imports state history and performs necessary recalculations.
-  Future<void> importStateHistory(
-      ImportStateHistory import, BuildContext context) async {
+  Future<void> importStateHistory(ImportStateHistory import, BuildContext context) async {
     // Recalculate position and size if needed
-    if (import.configs.recalculateSizeAndPosition ||
-        import.version == ExportImportVersion.version_1_0_0) {
+    if (import.configs.recalculateSizeAndPosition || import.version == ExportImportVersion.version_1_0_0) {
       _recalculateSizeAndPosition(import);
     }
 
@@ -104,15 +102,13 @@ class MainEditorStateHistoryService {
           Size currentImageSize = sizesManager.decodedImageSize;
           Size lastRenderedImgSize = import.lastRenderedImgSize;
 
-          double scaleWidth =
-              currentImageSize.width / lastRenderedImgSize.width;
-          double scaleHeight =
-              currentImageSize.height / lastRenderedImgSize.height;
+          double scaleWidth = currentImageSize.width / lastRenderedImgSize.width;
+          double scaleHeight = currentImageSize.height / lastRenderedImgSize.height;
 
           scaleWidth = scaleWidth.isFinite ? scaleWidth : 1;
           scaleHeight = scaleHeight.isFinite ? scaleHeight : 1;
 
-          double scale = (scaleWidth + scaleHeight) / 2;
+          double scale = scaleWidth;
 
           layer
             ..scale *= scale
@@ -132,8 +128,7 @@ class MainEditorStateHistoryService {
     }
   }
 
-  Future<void> _precacheLayers(
-      ImportStateHistory import, BuildContext context) async {
+  Future<void> _precacheLayers(ImportStateHistory import, BuildContext context) async {
     await Future.wait(
       import.requirePrecacheList.toSet().map(
             (item) => precacheImage(
@@ -146,8 +141,7 @@ class MainEditorStateHistoryService {
 
   void _replaceStateHistory(ImportStateHistory import) {
     bool enableInitialEmptyState = import.configs.enableInitialEmptyState;
-    bool enableEmptyHistory =
-        import.stateHistory.isEmpty || enableInitialEmptyState;
+    bool enableEmptyHistory = import.stateHistory.isEmpty || enableInitialEmptyState;
     stateManager
       ..screenshots = []
       ..stateHistory = [
@@ -164,8 +158,7 @@ class MainEditorStateHistoryService {
       ..historyPointer = import.editorPosition + (enableEmptyHistory ? 1 : 0);
 
     for (var i = 0; i < import.stateHistory.length; i++) {
-      controllers.screenshot
-          .addEmptyScreenshot(screenshots: stateManager.screenshots);
+      controllers.screenshot.addEmptyScreenshot(screenshots: stateManager.screenshots);
     }
   }
 
@@ -178,16 +171,14 @@ class MainEditorStateHistoryService {
       if (import.configs.mergeMode == ImportEditorMergeMode.merge) {
         el.layers.insertAll(0, stateManager.stateHistory.last.layers);
         el.filters.insertAll(0, stateManager.stateHistory.last.filters);
-        el.tuneAdjustments
-            .insertAll(0, stateManager.stateHistory.last.tuneAdjustments);
+        el.tuneAdjustments.insertAll(0, stateManager.stateHistory.last.tuneAdjustments);
       }
     }
 
     for (var i = 0; i < import.stateHistory.length; i++) {
       stateManager.stateHistory.add(import.stateHistory[i]);
       if (i < import.stateHistory.length - 1) {
-        controllers.screenshot
-            .addEmptyScreenshot(screenshots: stateManager.screenshots);
+        controllers.screenshot.addEmptyScreenshot(screenshots: stateManager.screenshots);
       } else {
         takeScreenshot();
       }
