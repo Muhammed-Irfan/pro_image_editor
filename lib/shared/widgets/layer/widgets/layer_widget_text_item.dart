@@ -40,6 +40,14 @@ class LayerWidgetTextItem extends StatelessWidget {
       color: layer.color,
       overflow: TextOverflow.ellipsis,
     );
+    TextStyle? textStyle;
+    if (layer.textStyle?.fontFamily != null) {
+      try {
+        textStyle = GoogleFonts.getFont(layer.textStyle!.fontFamily!);
+      } catch (e) {
+        textStyle = layer.textStyle;
+      }
+    }
 
     return HeroMode(
       enabled: false,
@@ -56,14 +64,7 @@ class LayerWidgetTextItem extends StatelessWidget {
         layer.text.toString(),
         backgroundColor: layer.background,
         textAlign: layer.align,
-        style:
-            (layer.textStyle?.fontFamily != null ? GoogleFonts.getFont(layer.textStyle!.fontFamily!) : layer.textStyle)
-                    ?.copyWith(
-                  fontSize: style.fontSize,
-                  fontWeight: style.fontWeight,
-                  color: style.color,
-                ) ??
-                style,
+        style: textStyle ?? style,
       ),
     );
   }
