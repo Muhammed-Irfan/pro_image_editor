@@ -64,7 +64,12 @@ class LayerWidgetTextItem extends StatelessWidget {
         layer.text.toString(),
         backgroundColor: layer.background,
         textAlign: layer.align,
-        style: textStyle ?? style,
+        style: textStyle?.copyWith(
+              fontSize: style.fontSize,
+              fontWeight: style.fontWeight,
+              color: style.color,
+            ) ??
+            style,
       ),
     );
   }
