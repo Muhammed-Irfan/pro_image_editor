@@ -28,7 +28,7 @@ import '/shared/widgets/extended/interactive_viewer/extended_interactive_viewer.
 import '/shared/widgets/screen_resize_detector.dart';
 import '../filter_editor/types/filter_matrix.dart';
 import '../filter_editor/widgets/filter_generator.dart';
-import '../tune_editor/models/tune_adjustment_matrix.dart';
+import '../paint_editor/models/paint_editor_response_model.dart';
 import 'controllers/main_editor_controllers.dart';
 import 'mixins/main_editor_global_keys.dart';
 import 'providers/image_infos_provider.dart';
@@ -37,7 +37,6 @@ import 'services/layer_copy_manager.dart';
 import 'services/layer_interaction_manager.dart';
 import 'services/main_editor_state_history_service.dart';
 import 'services/sizes_manager.dart';
-import 'services/state_manager.dart';
 import 'widgets/main_editor_interactive_content.dart';
 
 /// A widget for image editing using ProImageEditor.
@@ -377,13 +376,16 @@ class ProImageEditorState extends State<ProImageEditor>
   /// Helper class for managing interactions with layers in the editor.
   late final LayerInteractionManager layerInteractionManager =
       LayerInteractionManager(
-    helperLinesCallbacks: mainEditorCallbacks?.helperLines,
-    helperLineConfigs: configs.helperLines,
     onSelectedLayerChanged: mainEditorCallbacks?.onSelectedLayerChanged,
+    helperLinesCallbacks: mainEditorCallbacks?.helperLines,
+    configs: configs,
   );
 
   /// Manager class for managing the state of the editor.
-  final StateManager stateManager = StateManager();
+  late final StateManager stateManager = StateManager(
+    onStateHistoryChange: () =>
+        mainEditorCallbacks?.onStateHistoryChange?.call(stateManager, this),
+  );
 
   late final _stateHistoryService = MainEditorStateHistoryService(
     sizesManager: sizesManager,
@@ -652,6 +654,7 @@ class ProImageEditorState extends State<ProImageEditor>
       _controllers.screenshot
           .addEmptyScreenshot(screenshots: stateManager.screenshots);
     }
+    setState(() {});
   }
 
   /// Replaces a layer at the specified index with a new layer.
@@ -700,6 +703,8 @@ class ProImageEditorState extends State<ProImageEditor>
     int removeLayerIndex = -1,
     bool blockSelectLayer = false,
     bool blockCaptureScreenshot = false,
+    bool autoCorrectZoomOffset = true,
+    bool autoCorrectZoomScale = true,
   }) {
     void correctOffset() {
       Offset fractionalOffset = const Offset(-0.5, -0.5);
@@ -735,6 +740,28 @@ class ProImageEditorState extends State<ProImageEditor>
 
     correctOffset();
 
+    final viewer = interactiveViewer.currentState;
+    if (viewer != null) {
+      final scaleDelta = viewer.scaleFactor;
+
+      if (autoCorrectZoomScale) {
+        layer.scale /= scaleDelta;
+      }
+      if (autoCorrectZoomOffset) {
+        final bodySize = sizesManager.bodySize;
+
+        final scaledSize = bodySize * scaleDelta;
+
+        final zoomOffset = Offset(
+              scaledSize.width - bodySize.width,
+              scaledSize.height - bodySize.height,
+            ) /
+            2;
+
+        layer.offset -= (viewer.offset + zoomOffset) / viewer.scaleFactor;
+      }
+    }
+
     layerInteractionManager.selectedLayerId = '';
 
     addHistory(newLayer: layer, blockCaptureScreenshot: blockCaptureScreenshot);
@@ -760,7 +787,10 @@ class ProImageEditorState extends State<ProImageEditor>
   /// Remove a layer from the editor.
   ///
   /// This method removes a layer from the editor and updates the editing state.
-  void removeLayer(Layer? layer) {
+  void removeLayer(
+    Layer? layer, {
+    bool blockCaptureScreenshot = false,
+  }) {
     int layerPos = activeLayers
         .indexWhere((element) => element.id == (layer?.id ?? _tempLayer!.id));
     if (layerPos >= 0) {
@@ -772,7 +802,8 @@ class ProImageEditorState extends State<ProImageEditor>
 
       var layers = _layerCopyManager.copyLayerList(activeLayers)
         ..removeAt(layerPos);
-      addHistory(layers: layers);
+      addHistory(
+          layers: layers, blockCaptureScreenshot: blockCaptureScreenshot);
       setState(() {});
     }
   }
@@ -926,6 +957,7 @@ class ProImageEditorState extends State<ProImageEditor>
     if (!_decodeImageCompleter.isCompleted) {
       _decodeImageCompleter.complete(true);
     }
+    mainEditorCallbacks?.onImageDecoded?.call();
 
     if (shouldImportStateHistory) {
       await importStateHistory(stateHistoryConfigs.initStateHistory!);
@@ -1122,6 +1154,7 @@ class ProImageEditorState extends State<ProImageEditor>
           detail: details,
           editorSize: sizesManager.bodySize,
           screenPaddingHelper: sizesManager.imageMargin,
+          editorScaleFactor: editorScaleFactor,
         );
     }
     mainEditorCallbacks?.handleUpdateLayer(_activeLayer!);
@@ -1380,7 +1413,7 @@ class ProImageEditorState extends State<ProImageEditor>
       },
     );
 
-    List<PaintLayer>? paintItemLayers = await openPage<List<PaintLayer>>(
+    PaintEditorResponse? result = await openPage<PaintEditorResponse>(
       PaintEditor.autoSource(
         key: paintEditor,
         editorImage: editorImage,
@@ -1389,7 +1422,11 @@ class ProImageEditorState extends State<ProImageEditor>
           configs: configs,
           callbacks:
               callbacks.copyWith(paintEditorCallbacks: overridenPaintCallbacks),
-          layers: activeLayers,
+          layers: _layerCopyManager.duplicateLayerList(
+            activeLayers,
+            offset: Offset.zero,
+            enableCopyId: true,
+          ),
           theme: _theme,
           mainImageSize: sizesManager.decodedImageSize,
           mainBodySize: sizesManager.bodySize,
@@ -1402,20 +1439,30 @@ class ProImageEditorState extends State<ProImageEditor>
       ),
       duration: const Duration(milliseconds: 150),
     );
-    if (paintItemLayers != null && paintItemLayers.isNotEmpty) {
-      for (var i = 0; i < paintItemLayers.length; i++) {
-        addLayer(
-          paintItemLayers[i],
-          blockSelectLayer: true,
-          blockCaptureScreenshot: i != paintItemLayers.length - 1,
-        );
-      }
 
-      _selectLayerAfterHeroIsDone(paintItemLayers.last.id);
+    if (result == null) return;
 
-      setState(() {});
-      mainEditorCallbacks?.handleUpdateUI();
+    for (var i = 0; i < result.layers.length; i++) {
+      final layer = result.layers[i];
+      addLayer(
+        _layerCopyManager.duplicateLayer(layer, offset: Offset.zero),
+        blockSelectLayer: true,
+        blockCaptureScreenshot: true,
+        autoCorrectZoomOffset: false,
+        autoCorrectZoomScale: false,
+      );
     }
+    for (Layer layer in result.removedLayers) {
+      removeLayer(layer, blockCaptureScreenshot: true);
+    }
+
+    if (result.layers.isNotEmpty) {
+      _selectLayerAfterHeroIsDone(result.layers.last.id);
+      _takeScreenshot();
+    }
+
+    setState(() {});
+    mainEditorCallbacks?.handleUpdateUI();
   }
 
   /// Opens the text editor.
@@ -1464,7 +1511,7 @@ class ProImageEditorState extends State<ProImageEditor>
           configs: configs,
           callbacks: callbacks,
           theme: _theme,
-          layers: stateManager.activeLayers,
+          layers: _layerCopyManager.copyLayerList(activeLayers),
           transformConfigs: stateManager.transformConfigs,
           mainImageSize: sizesManager.decodedImageSize,
           mainBodySize: sizesManager.bodySize,
@@ -1533,7 +1580,7 @@ class ProImageEditorState extends State<ProImageEditor>
             configs: configs,
             callbacks: callbacks,
             transformConfigs: stateManager.transformConfigs,
-            layers: activeLayers,
+            layers: _layerCopyManager.copyLayerList(activeLayers),
             mainImageSize: sizesManager.decodedImageSize,
             mainBodySize: sizesManager.bodySize,
             convertToUint8List: false,
@@ -1578,7 +1625,7 @@ class ProImageEditorState extends State<ProImageEditor>
           configs: configs,
           callbacks: callbacks,
           transformConfigs: stateManager.transformConfigs,
-          layers: activeLayers,
+          layers: _layerCopyManager.copyLayerList(activeLayers),
           mainImageSize: sizesManager.decodedImageSize,
           mainBodySize: sizesManager.bodySize,
           convertToUint8List: false,
@@ -1612,7 +1659,7 @@ class ProImageEditorState extends State<ProImageEditor>
           theme: _theme,
           mainImageSize: sizesManager.decodedImageSize,
           mainBodySize: sizesManager.bodySize,
-          layers: activeLayers,
+          layers: _layerCopyManager.copyLayerList(activeLayers),
           configs: configs,
           callbacks: callbacks,
           transformConfigs: stateManager.transformConfigs,
@@ -2011,6 +2058,19 @@ class ProImageEditorState extends State<ProImageEditor>
               : null,
         ) ??
         Uint8List.fromList([]);
+  }
+
+  /// Closes all active sub-editors within the main editor, including paint,
+  /// text, crop/rotate, filter, tune, and emoji editors.
+  /// This ensures that any open sub-editor is properly closed and the main
+  /// editor returns to its default state.
+  void closeSubEditor() {
+    paintEditor.currentState?.close();
+    textEditor.currentState?.close();
+    cropRotateEditor.currentState?.close();
+    filterEditor.currentState?.close();
+    tuneEditor.currentState?.close();
+    emojiEditor.currentState?.close();
   }
 
   /// Close the image editor.
@@ -2448,7 +2508,11 @@ class ProImageEditorState extends State<ProImageEditor>
       },
       onDuplicateLayer: (layer) {
         var duplication = _layerCopyManager.duplicateLayer(layer);
-        addLayer(duplication);
+        addLayer(
+          duplication,
+          autoCorrectZoomOffset: false,
+          autoCorrectZoomScale: false,
+        );
       },
     );
   }
