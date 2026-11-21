@@ -140,7 +140,9 @@ class MainEditorStateHistoryService {
           scaleWidth = scaleWidth.isFinite ? scaleWidth : 1;
           scaleHeight = scaleHeight.isFinite ? scaleHeight : 1;
 
-          double scale = (scaleWidth + scaleHeight) / 2;
+          // Wizad fork: scale by width only, matching how the backend lays
+          // out editor JSON.
+          double scale = scaleWidth;
 
           void rescale(Layer placement) => placement
             ..scale *= scale

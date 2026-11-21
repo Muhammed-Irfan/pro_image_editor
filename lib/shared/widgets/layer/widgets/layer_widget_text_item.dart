@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '/core/models/editor_configs/text_editor_configs.dart';
@@ -204,13 +205,14 @@ class LayerWidgetTextItem extends StatefulWidget {
     // Get the full style including shadows
     TextStyle finalStyle;
     if (layer.textStyle != null) {
-      finalStyle = layer.textStyle!
+      final base = _resolveGoogleFont(layer.textStyle!);
+      finalStyle = base
           .scaleLayerEffects(effectScale)
           .copyWith(
             fontSize: style.fontSize,
-            fontWeight: layer.textStyle!.fontWeight ?? style.fontWeight,
+            fontWeight: base.fontWeight ?? style.fontWeight,
             color: style.color,
-            fontFamily: layer.textStyle!.fontFamily ?? style.fontFamily,
+            fontFamily: base.fontFamily ?? style.fontFamily,
           );
     } else {
       finalStyle = style;
@@ -239,6 +241,20 @@ class LayerWidgetTextItem extends StatefulWidget {
       reserveEffectSpace: true,
       visibleLength: revealedLength,
     );
+  }
+
+  /// Wizad fork: imported layers carry a plain family name (e.g. "Poppins")
+  /// that is only rendered once google_fonts loads it. Falls back to [style]
+  /// when the family is not a Google Font (bundled fonts, already-resolved
+  /// names like "Poppins_regular").
+  static TextStyle _resolveGoogleFont(TextStyle style) {
+    final family = style.fontFamily;
+    if (family == null) return style;
+    try {
+      return GoogleFonts.getFont(family, textStyle: style);
+    } catch (_) {
+      return style;
+    }
   }
 
   /// The text of [layer] in [style], with the highlight at [highlightIndex]
